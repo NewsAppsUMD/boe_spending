@@ -1,0 +1,16 @@
+```{r}
+library(tidyverse)
+library(janitor)
+```
+
+```{r}
+howard_boe <- read_csv("howardboe_cleaned.csv")
+```
+```{r}
+howard_boe <- howard_boe %>% filter(`Agency Name` == "Howard County Public Schools") %>% clean_names() %>% mutate(payee_name = str_to_upper(payee_name))
+```
+
+```{r}
+boe_baltimore_final %>% group_by(payee_name, payee_name_old) %>% summarize(count = n()) 
+```
+
