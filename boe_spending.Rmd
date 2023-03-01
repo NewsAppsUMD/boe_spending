@@ -15,7 +15,22 @@ boe_spending <- boe_spending %>%
   mutate(payee_name_clean = str_replace(payee_name_clean, ",", "")) %>%
   mutate(payee_name_clean = str_replace(payee_name_clean, "[.]", "")) %>%
   mutate(payee_name_clean = str_replace(payee_name_clean, "INC.", "INC")) %>%
-  mutate(agency_name = str_replace(agency_name, "ST.", "ST"))
+  mutate(agency_name = str_replace(agency_name, "ST.", "ST")) %>% 
+  mutate(agency_name = str_squish(agency_name))
+
+boe_spending <- boe_spending %>% 
+  mutate(agency_name = case_when(
+    agency_name == 'BALITMORE CITY PUBLIC SCHOOLS' ~ 'BALTIMORE CITY PUBLIC SCHOOLS',
+    agency_name == 'CAROLINE COUNTY BOARD OF EDUCATION' ~ 'CAROLINE COUNTY PUBLIC SCHOOLS',
+    agency_name == 'DORCHESTR COUNTY BOARD OF EDUCATION' ~ 'DORCHESTER COUNTY PUBLIC SCHOOLS',
+    agency_name == 'DORCHESTR COUNTY PUBLIC SCHOOLS' ~ 'DORCHESTER COUNTY PUBLIC SCHOOLS',
+    agency_name == 'MONTGOMERY COUNTY PUBLIC SCHOOL' ~ 'MONTGOMERY COUNTY PUBLIC SCHOOLS',
+    agency_name == "PRINCE GEORGES' COUNTY PUBLIC SCHOOLS" ~ "PRINCE GEORGE'S COUNTY PUBLIC SCHOOLS",
+    TRUE ~ agency_name
+  ))
+
+boe_spending <- boe_spending %>% 
+  drop_na(agency_name)
 ```
 
 
@@ -25,12 +40,6 @@ boe_spending <- boe_spending %>%
 boe_spending <- boe_spending %>% 
   mutate(payee_name_clean = str_replace(payee_name_clean, '(EFT)','')) %>% mutate(payee_name_clean = str_replace(payee_name_clean, ' (EFTPS ONLY)',''))
 
-# Prince George's
-boe_spending <- boe_spending %>% 
-  mutate(agency_name = case_when(
-      agency_name == "PRINCE GEORGES' COUNTY PUBLIC SCHOOLS" ~ "PRINCE GEORGE'S COUNTY PUBLIC SCHOOLS",
-      TRUE ~ agency_name
-  ))
 ```
 
 
@@ -43,5 +52,21 @@ unique_payee_name_clean <- boe_spending %>%
 
 
 write_csv(unique_payee_name_clean, "unique_payee_name_clean.csv")
+```
+
+
+### OpenRefine results
+
+```{r}
+boe_payees_final <- read_csv("boe-payees-final.csv") %>% select(-count)
+```
+
+```{r}
+boe_spending_cleaned <- boe_spending %>% 
+  inner_join(boe_payees_final)
+```
+
+```{r}
+write_csv(boe_spending_cleaned, "boe_spending_cleaned.csv")
 ```
 
