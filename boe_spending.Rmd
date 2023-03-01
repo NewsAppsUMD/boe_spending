@@ -20,6 +20,7 @@ boe_spending <- boe_spending %>%
 
 boe_spending <- boe_spending %>% 
   mutate(agency_name = case_when(
+    agency_name == 'BALTIMORE CITY SCHOOLS' ~ 'BALTIMORE CITY PUBLIC SCHOOLS',
     agency_name == 'BALITMORE CITY PUBLIC SCHOOLS' ~ 'BALTIMORE CITY PUBLIC SCHOOLS',
     agency_name == 'CAROLINE COUNTY BOARD OF EDUCATION' ~ 'CAROLINE COUNTY PUBLIC SCHOOLS',
     agency_name == 'DORCHESTR COUNTY BOARD OF EDUCATION' ~ 'DORCHESTER COUNTY PUBLIC SCHOOLS',
