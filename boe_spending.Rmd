@@ -1,6 +1,7 @@
 ```{r}
 library(tidyverse)
 library(janitor)
+library(slugify)
 ```
 
 ```{r}
@@ -68,6 +69,60 @@ boe_spending_cleaned <- boe_spending %>%
 ```
 
 ```{r}
-write_csv(boe_spending_cleaned, "boe_spending_cleaned.csv")
+write_csv(boe_spending_cleaned, "boe_spending_cleaned.csv") %>% inner_join('boe_payees_final', by=c('payee_name'))
 ```
+
+```{r}
+carroll_2022 <- read_csv("carroll_2022.csv") %>% mutate(payee_zip5 = str_sub(payee_zip, 1, 5)) %>% mutate(payee_name_clean = str_to_upper(payee_name)) %>% mutate(payee_name_clean = str_squish(payee_name_clean)) %>% 
+  mutate(payee_name_clean = str_replace(payee_name_clean, ",", "")) %>%
+  mutate(payee_name_clean = str_replace(payee_name_clean, "[.]", "")) %>%
+  mutate(payee_name_clean = str_replace(payee_name_clean, "INC.", "INC"))
+
+carroll_2022 <- carroll_2022 %>% left_join(boe_payees_final, by=c('payee_name_clean'))
+
+carroll_2022 <- carroll_2022 %>% mutate(payee_name_refined = case_when(
+  is.na(payee_name_refined) ~ payee_name_clean,
+  TRUE ~ payee_name_refined
+))
+
+```
+
+
+
+```{r}
+boe_final <- read_csv("BOE-Final.csv")
+
+boe_final <- boe_final %>% bind_rows(carroll_2022)
+
+boe_final <- boe_final %>% 
+  mutate(slug = case_when(
+    agency_name == 'ALLEGANY COUNTY PUBLIC SCHOOLS' ~ 'allegany-county',
+    agency_name == 'ANNE ARUNDEL CO. PUBLIC SCHOOLS' ~ 'anne-arundel-county',
+    agency_name == 'BALTIMORE CITY PUBLIC SCHOOLS' ~ 'baltimore-city',
+    agency_name == 'BALTIMORE COUNTY PUBLIC SCHOOLS' ~ 'baltimore-county',
+    agency_name == 'CALVERT COUNTY PUBLIC SCHOOLS' ~ 'calvert-county',
+    agency_name == 'CARROLL COUNTY PUBLIC SCHOOLS' ~ 'carroll-county',
+    agency_name == 'CAROLINE COUNTY PUBLIC SCHOOLS' ~ 'caroline-county',
+    agency_name == 'CECIL COUNTY PUBLIC SCHOOLS' ~ 'cecil-county',
+    agency_name == 'CHARLES COUNTY PUBLIC SCHOOLS' ~ 'charles-county',
+    agency_name == 'DORCHESTER COUNTY PUBLIC SCHOOLS' ~ 'dorchester-county',
+    agency_name == 'FREDERICK COUNTY PUBLIC SCHOOLS' ~ 'frederick-county',
+    agency_name == 'HARFORD COUNTY PUBLIC SCHOOLS' ~ 'harford-county',
+    agency_name == 'OAKLAND, GARRETT COUNTY PUBLIC SCHOOLS' ~ 'garrett-county',
+    agency_name == 'HOWARD COUNTY PUBLIC SCHOOLS' ~ 'howard-county',
+    agency_name == 'KENT COUNTY PUBLIC SCHOOLS' ~ 'kent-county',
+    agency_name == 'MONTGOMERY COUNTY PUBLIC SCHOOLS' ~ 'montgomery-county',
+    agency_name == "PRINCE GEORGE'S COUNTY PUBLIC SCHOOLS" ~ 'prince-georges-county',
+    agency_name == "ST MARY'S COUNTY PUBLIC SCHOOLS" ~ 'st-marys-county',
+    agency_name == 'WORCESTR COUNTY BOARD OF ED' ~ 'worcester-county',
+    agency_name == "QUEEN ANNE'S COUNTY PUBLIC SCHOOLS" ~ 'queen-annes-county',
+    agency_name == 'SOMERSET COUNTY PUBLIC SCHOOLS' ~ 'somerset-county',
+    agency_name == 'TALBOT COUNTY PUBLIC SCHOOLS' ~ 'talbot-county',
+    agency_name == 'WASHINGTON COUNTY PUBLIC SCHOOLS' ~ 'washington-county',
+    agency_name == 'WICOMICO COUNTY PUBLIC SCHOOLS' ~ 'wicomico-county'
+  ))
+
+write_csv(boe_final, "boe_spending_cleaned.csv")
+```
+
 
