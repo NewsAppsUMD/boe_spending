@@ -8,6 +8,7 @@ library(slugify)
 boe_spending <- read_csv("~/code/boe_spending/County_Board_of_Education_-_Spending_Disclosures.csv") %>% clean_names() %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name), payee_zip5 = str_sub(payee_zip, 1, 5))
 ```
 
+
 ### General cleaning
 
 ```{r}
@@ -33,6 +34,15 @@ boe_spending <- boe_spending %>%
 
 boe_spending <- boe_spending %>% 
   drop_na(agency_name)
+```
+
+
+### Years for Agencies
+
+# Years for Agencies
+
+```{r}
+boe_spending %>% group_by(agency_name, fiscal_year) %>% summarize(count = n()) %>% pivot_wider(names_from = fiscal_year, values_from = count) 
 ```
 
 
