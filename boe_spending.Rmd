@@ -30,7 +30,7 @@ montgomery_original <- boe_spending %>% filter(agency_name == 'MONTGOMERY COUNTY
 
 montgomery_replacement <- read_csv("montgomery_2019.csv") %>% clean_names() %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name))
 
-montgomery_replacement <- montgomery_replacement %>% left_join(montgomery_original, by=c('payee_name', 'fiscal_year')) %>% select(-agency_name.y, -amount.y) %>% rename(agency_name = agency_name.x, amount = amount.x)
+#montgomery_replacement <- montgomery_replacement %>% left_join(montgomery_original, by=c('payee_name', 'fiscal_year')) %>% select(-agency_name.y, -amount.y) %>% rename(agency_name = agency_name.x, amount = amount.x, payee_zip = payee_zip.x, payee_name_clean = payee_name_clean.x)
 
 boe_spending <- boe_spending %>% anti_join(montgomery_original)
 
