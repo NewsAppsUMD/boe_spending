@@ -5,7 +5,36 @@ library(slugify)
 ```
 
 ```{r}
-boe_spending <- read_csv("~/code/boe_spending/County_Board_of_Education_-_Spending_Disclosures.csv") %>% clean_names() %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name), payee_zip5 = str_sub(payee_zip, 1, 5))
+boe_spending <- read_csv("~/code/boe_spending/County_Board_of_Education_-_Spending_Disclosures.csv") %>% clean_names() 
+```
+
+### Anne Arundel Replacement
+
+```{r}
+anne_arundel_original <- boe_spending %>% filter(agency_name == 'Anne Arundel Co. Public Schools', fiscal_year > 2019)
+
+anne_arundel_replacement <- read_csv("anne_arundel_replacement.csv") %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name))
+
+anne_arundel_replacement <- anne_arundel_replacement %>% left_join(anne_arundel_original, by=c('payee_name', 'fiscal_year')) %>% select(-agency_name.y, -amount.y) %>% rename(agency_name = agency_name.x, amount = amount.x)
+
+boe_spending <- boe_spending %>% anti_join(anne_arundel_original)
+
+boe_spending <- bind_rows(boe_spending, anne_arundel_replacement) %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name), payee_zip5 = str_sub(payee_zip, 1, 5))
+
+```
+
+### Montgomery 2019 Replacement
+
+```{r}
+montgomery_original <- boe_spending %>% filter(agency_name == 'MONTGOMERY COUNTY PUBLIC SCHOOL', fiscal_year == 2019)
+
+montgomery_replacement <- read_csv("montgomery_2019.csv") %>% clean_names() %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name))
+
+montgomery_replacement <- montgomery_replacement %>% left_join(montgomery_original, by=c('payee_name', 'fiscal_year')) %>% select(-agency_name.y, -amount.y) %>% rename(agency_name = agency_name.x, amount = amount.x)
+
+boe_spending <- boe_spending %>% anti_join(montgomery_original)
+
+boe_spending <- bind_rows(boe_spending, montgomery_replacement) %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name), payee_zip5 = str_sub(payee_zip, 1, 5))
 ```
 
 
@@ -17,11 +46,14 @@ boe_spending <- boe_spending %>%
   mutate(payee_name_clean = str_replace(payee_name_clean, ",", "")) %>%
   mutate(payee_name_clean = str_replace(payee_name_clean, "[.]", "")) %>%
   mutate(payee_name_clean = str_replace(payee_name_clean, "INC.", "INC")) %>%
+  mutate(payee_name_clean = str_replace(payee_name_clean, "(EFT)", "")) %>% 
+  mutate(payee_name_clean = str_replace(payee_name_clean, "(EFT ONLY)", "")) %>% 
   mutate(agency_name = str_replace(agency_name, "ST.", "ST")) %>% 
   mutate(agency_name = str_squish(agency_name))
 
 boe_spending <- boe_spending %>% 
   mutate(agency_name = case_when(
+    agency_name == 'ANNE ARUNDEL CO. PUBLIC SCHOOLS' ~ 'ANNE ARUNDEL COUNTY PUBLIC SCHOOLS',
     agency_name == 'BALTIMORE CITY SCHOOLS' ~ 'BALTIMORE CITY PUBLIC SCHOOLS',
     agency_name == 'BALITMORE CITY PUBLIC SCHOOLS' ~ 'BALTIMORE CITY PUBLIC SCHOOLS',
     agency_name == 'CAROLINE COUNTY BOARD OF EDUCATION' ~ 'CAROLINE COUNTY PUBLIC SCHOOLS',
@@ -29,6 +61,7 @@ boe_spending <- boe_spending %>%
     agency_name == 'DORCHESTR COUNTY PUBLIC SCHOOLS' ~ 'DORCHESTER COUNTY PUBLIC SCHOOLS',
     agency_name == 'MONTGOMERY COUNTY PUBLIC SCHOOL' ~ 'MONTGOMERY COUNTY PUBLIC SCHOOLS',
     agency_name == "PRINCE GEORGES' COUNTY PUBLIC SCHOOLS" ~ "PRINCE GEORGE'S COUNTY PUBLIC SCHOOLS",
+    agency_name == 'WORCESTR COUNTY BOARD OF ED' ~ 'WORCESTER COUNTY PUBLIC SCHOOLS',
     TRUE ~ agency_name
   ))
 
@@ -37,9 +70,8 @@ boe_spending <- boe_spending %>%
 ```
 
 
-### Years for Agencies
 
-# Years for Agencies
+### Years for Agencies
 
 ```{r}
 boe_spending %>% group_by(agency_name, fiscal_year) %>% summarize(count = n()) %>% pivot_wider(names_from = fiscal_year, values_from = count) 
@@ -55,59 +87,16 @@ boe_spending <- boe_spending %>%
 ```
 
 
-### Generate unique payee_name_clean
-
-```{r}
-unique_payee_name_clean <- boe_spending %>% 
-  group_by(payee_name_clean) %>% 
-  summarize(count = n())
-
-
-write_csv(unique_payee_name_clean, "unique_payee_name_clean.csv")
-```
-
-
 ### OpenRefine results
 
 ```{r}
-boe_payees_final <- read_csv("boe-payees-final.csv") %>% select(-count)
-```
 
-```{r}
-boe_spending_cleaned <- boe_spending %>% 
-  inner_join(boe_payees_final)
-```
+boe_final <- read_csv("boe_final.csv")
 
-```{r}
-write_csv(boe_spending_cleaned, "boe_spending_cleaned.csv") %>% inner_join('boe_payees_final', by=c('payee_name'))
-```
-
-```{r}
-carroll_2022 <- read_csv("carroll_2022.csv") %>% mutate(payee_zip5 = str_sub(payee_zip, 1, 5)) %>% mutate(payee_name_clean = str_to_upper(payee_name)) %>% mutate(payee_name_clean = str_squish(payee_name_clean)) %>% 
-  mutate(payee_name_clean = str_replace(payee_name_clean, ",", "")) %>%
-  mutate(payee_name_clean = str_replace(payee_name_clean, "[.]", "")) %>%
-  mutate(payee_name_clean = str_replace(payee_name_clean, "INC.", "INC"))
-
-carroll_2022 <- carroll_2022 %>% left_join(boe_payees_final, by=c('payee_name_clean'))
-
-carroll_2022 <- carroll_2022 %>% mutate(payee_name_refined = case_when(
-  is.na(payee_name_refined) ~ payee_name_clean,
-  TRUE ~ payee_name_refined
-))
-
-```
-
-
-
-```{r}
-boe_final <- read_csv("BOE-Final.csv")
-
-boe_final <- boe_final %>% bind_rows(carroll_2022)
-
-boe_final <- boe_final %>% 
+boe_spending <- boe_spending %>% 
   mutate(slug = case_when(
     agency_name == 'ALLEGANY COUNTY PUBLIC SCHOOLS' ~ 'allegany-county',
-    agency_name == 'ANNE ARUNDEL CO. PUBLIC SCHOOLS' ~ 'anne-arundel-county',
+    agency_name == 'ANNE ARUNDEL COUNTY PUBLIC SCHOOLS' ~ 'anne-arundel-county',
     agency_name == 'BALTIMORE CITY PUBLIC SCHOOLS' ~ 'baltimore-city',
     agency_name == 'BALTIMORE COUNTY PUBLIC SCHOOLS' ~ 'baltimore-county',
     agency_name == 'CALVERT COUNTY PUBLIC SCHOOLS' ~ 'calvert-county',
@@ -124,7 +113,7 @@ boe_final <- boe_final %>%
     agency_name == 'MONTGOMERY COUNTY PUBLIC SCHOOLS' ~ 'montgomery-county',
     agency_name == "PRINCE GEORGE'S COUNTY PUBLIC SCHOOLS" ~ 'prince-georges-county',
     agency_name == "ST MARY'S COUNTY PUBLIC SCHOOLS" ~ 'st-marys-county',
-    agency_name == 'WORCESTR COUNTY BOARD OF ED' ~ 'worcester-county',
+    agency_name == 'WORCESTER COUNTY PUBLIC SCHOOLS' ~ 'worcester-county',
     agency_name == "QUEEN ANNE'S COUNTY PUBLIC SCHOOLS" ~ 'queen-annes-county',
     agency_name == 'SOMERSET COUNTY PUBLIC SCHOOLS' ~ 'somerset-county',
     agency_name == 'TALBOT COUNTY PUBLIC SCHOOLS' ~ 'talbot-county',
@@ -132,7 +121,25 @@ boe_final <- boe_final %>%
     agency_name == 'WICOMICO COUNTY PUBLIC SCHOOLS' ~ 'wicomico-county'
   ))
 
-write_csv(boe_final, "boe_spending_cleaned.csv")
+boe_final <- boe_final %>% 
+  mutate(payee_name_refined = str_replace_all(payee_name_refined, "\u00A0", " "))
+
+boe_payees_final <- boe_final %>% 
+  distinct(payee_name_clean, payee_name_refined) 
+  
+boe_spending_cleaned <- boe_spending %>% 
+  left_join(boe_payees_final)
+
+boe_spending_cleaned <- boe_spending_cleaned %>% 
+  mutate(payee_name_refined = case_when(
+    is.na(payee_name_refined) ~ payee_name_clean,
+    TRUE ~ payee_name_refined
+  ))
+
+boe_spending_cleaned <- boe_spending_cleaned %>% select(agency_name, fiscal_year, amount, payee_name_refined, payee_zip5, slug, purpose_of_payment_baltimore_county_only) %>% 
+  rename(payee_name = payee_name_refined, payee_zip = payee_zip5) %>% mutate(purpose_of_payment_baltimore_county_only = replace_na(purpose_of_payment_baltimore_county_only, ""))
+
+write_csv(boe_spending_cleaned, "boe_spending_cleaned.csv")
 ```
 
 
