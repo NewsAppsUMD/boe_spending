@@ -1,7 +1,7 @@
 ```{r}
 library(tidyverse)
 library(janitor)
-library(slugify)
+#library(slugify)
 ```
 
 ```{r}
@@ -31,6 +31,16 @@ baltimore_county_2022_totals <- baltimore_county_2022 %>%
 
 boe_spending <- bind_rows(boe_spending, baltimore_county_2021_totals, baltimore_county_2022_totals)
 
+```
+
+
+### Baltimore City FY 2021
+
+```{r}
+baltimore_city_2021 <- read_csv("~/code/boe_spending/baltimore_city_2021.csv") %>% clean_names() %>% 
+  mutate(fiscal_year = 2021, agency_name = 'BALTIMORE CITY PUBLIC SCHOOLS')
+
+boe_spending <- bind_rows(boe_spending, baltimore_city_2021)
 ```
 
 
@@ -165,7 +175,7 @@ boe_spending_cleaned <- boe_spending_cleaned %>%
 
 boe_spending_cleaned <- boe_spending_cleaned %>% select(agency_name, fiscal_year, amount, payee_name_refined, payee_zip5, slug) %>% 
   rename(payee_name = payee_name_refined, payee_zip = payee_zip5) %>%
-  group_by(agency_name, fiscal_year, payee_name_refined, payee_zip5, slug) %>% 
+  group_by(agency_name, fiscal_year, payee_name, payee_zip, slug) %>% 
   summarize(total = sum(amount)) %>% 
   rename(amount = total)
 
