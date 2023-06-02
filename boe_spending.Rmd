@@ -8,6 +8,33 @@ library(slugify)
 boe_spending <- read_csv("~/code/boe_spending/County_Board_of_Education_-_Spending_Disclosures.csv") %>% clean_names() 
 ```
 
+### Baltimore County 2021 & 2022
+
+need to load, group by and summarize as these appear to be individual payments?
+
+```{r}
+baltimore_county_2021 <- read_csv("~/code/boe_spending/baltimore_county_2021.csv") %>% clean_names()
+
+baltimore_county_2021_totals <- baltimore_county_2021 %>% 
+  group_by(fiscal_year, agency_name, payee_name, payee_zip, purpose_of_payment_baltimore_county) %>% 
+  summarize(total = sum(amount)) %>% 
+  filter(total >= 25000) %>% 
+  rename(purpose_of_payment_baltimore_county_only = purpose_of_payment_baltimore_county, amount = total)
+
+baltimore_county_2022 <- read_csv("~/code/boe_spending/baltimore_county_2022.csv") %>% clean_names()
+
+baltimore_county_2022_totals <- baltimore_county_2022 %>% 
+  group_by(fiscal_year, agency_name, payee_name, payee_zip, purpose_of_payment_baltimore_county_only) %>% 
+  summarize(total = sum(amount)) %>% 
+  filter(total >= 25000) %>% 
+  rename(amount = total)
+
+boe_spending <- bind_rows(boe_spending, baltimore_county_2021_totals, baltimore_county_2022_totals)
+
+```
+
+
+
 ### Anne Arundel Replacement
 
 ```{r}
@@ -136,8 +163,11 @@ boe_spending_cleaned <- boe_spending_cleaned %>%
     TRUE ~ payee_name_refined
   ))
 
-boe_spending_cleaned <- boe_spending_cleaned %>% select(agency_name, fiscal_year, amount, payee_name_refined, payee_zip5, slug, purpose_of_payment_baltimore_county_only) %>% 
-  rename(payee_name = payee_name_refined, payee_zip = payee_zip5) %>% mutate(purpose_of_payment_baltimore_county_only = replace_na(purpose_of_payment_baltimore_county_only, ""))
+boe_spending_cleaned <- boe_spending_cleaned %>% select(agency_name, fiscal_year, amount, payee_name_refined, payee_zip5, slug) %>% 
+  rename(payee_name = payee_name_refined, payee_zip = payee_zip5) %>%
+  group_by(agency_name, fiscal_year, payee_name_refined, payee_zip5, slug) %>% 
+  summarize(total = sum(amount)) %>% 
+  rename(amount = total)
 
 write_csv(boe_spending_cleaned, "boe_spending_cleaned.csv")
 ```
