@@ -128,7 +128,19 @@ boe_spending <- boe_spending %>%
 
 ```{r}
 
-boe_final <- read_csv("boe_final.csv")
+boe_final <- read_csv("boe_final.csv") %>% filter(fiscal_year > 2018)
+
+boe_final <- boe_final %>% 
+  mutate(payee_name = str_replace_all(payee_name, "\u00A0", " "))
+
+exclude <- read_csv("exclude.csv") %>% distinct()
+
+boe_final <- boe_final %>% left_join(exclude)
+
+boe_final <- boe_final %>% 
+  mutate(exclude = if_else(is.na(exclude), FALSE, TRUE))
+
+write_csv(boe_final, "boe_spending_cleaned.csv")
 
 boe_spending <- boe_spending %>% 
   mutate(slug = case_when(
@@ -158,11 +170,10 @@ boe_spending <- boe_spending %>%
     agency_name == 'WICOMICO COUNTY PUBLIC SCHOOLS' ~ 'wicomico-county'
   ))
 
-boe_final <- boe_final %>% 
-  mutate(payee_name_refined = str_replace_all(payee_name_refined, "\u00A0", " "))
+
 
 boe_payees_final <- boe_final %>% 
-  distinct(payee_name_clean, payee_name_refined) 
+  distinct(payee_name) 
   
 boe_spending_cleaned <- boe_spending %>% 
   left_join(boe_payees_final)
