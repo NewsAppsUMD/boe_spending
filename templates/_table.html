@@ -17,7 +17,7 @@
               <td class="col-fiscal_year type-str">{{ row.cells[3]['value'] }}</td>
               <td class="col-payee_name type-str">{{ row.cells[4]['value'] }}</td>
               <td class="col-payee_zip type-str">{{ row.cells[5]['value'] }}</td>
-              <td class="col-amount type-float">${{'{:,.0f}'.format(row.cells[6]['raw']) }}</td>
+              <td class="col-amount type-float">${{'{:,.0f}'.format(row.cells[6]['raw']|float) }}</td>
             </tr>
         {% endfor %}
         </tbody>
