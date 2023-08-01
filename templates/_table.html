@@ -3,7 +3,6 @@
     <table class="rows-and-columns">
         <thead>
             <tr>
-                <th class="col-Link" scope="col" data-column="Link" data-column-type="" data-column-not-null="0" data-is-pk="0"></th>
                 <th class="col-agency_name" scope="col" data-column="agency_name" data-column-type="text" data-column-not-null="0" data-is-pk="0">School District</th>
                 <th class="col-fiscal_year" scope="col" data-column="fiscal_year" data-column-type="text" data-column-not-null="0" data-is-pk="0">Fiscal Year</th>
                 <th class="col-payee_name" scope="col" data-column="payee_name" data-column-type="text" data-column-not-null="0" data-is-pk="0">Vendor</th>
@@ -14,7 +13,6 @@
         <tbody>
         {% for row in display_rows %}
             <tr>
-              <td class="col-Link type-pk">{{ row.cells[0]['value'] }}</td>
               <td class="col-agency_name type-str">{{ row.cells[2]['value'] }}</td>
               <td class="col-fiscal_year type-str">{{ row.cells[3]['value'] }}</td>
               <td class="col-payee_name type-str">{{ row.cells[4]['value'] }}</td>
