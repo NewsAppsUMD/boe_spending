@@ -21,17 +21,16 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-header" style="border-color: #{{ database_color(database) }}">
-    <p class="subhed">Search Vendors</p>
-</div>
-
-{% block description_source_license %}{% include "_description_source_license.html" %}{% endblock %}
-
 
 <form class="filters" action="{{ urls.table(database, table) }}" method="get">
-    {% if supports_search %}
-        <div class="search-row"><label for="_search">Search:</label><input id="_search" type="search" name="_search" value="{{ search }}"></div>
-    {% endif %}
+      <div class="search-row">
+        <input id="_search" type="search" name="_search" value="{{ search }}">
+        <input type="hidden" name="_nocol" value="exclude">
+        <input type="hidden" name="_nocol" value="slug">
+        <input type="hidden" name="_nocol" value="purpose_of_payment_baltimore_county_only">
+        <input type="hidden" name="exclude__exact" value="FALSE">
+        <input type="submit" value="Search">
+      </div>
 </form>
 
 
@@ -45,16 +44,10 @@
      <p><a href="{{ next_url }}">Next page</a></p>
 {% endif %}
 
+<br />
 {% if display_rows %}
     <div id="export" class="advanced-export">
-        <h3>Advanced export</h3>
-        <p>JSON shape:
-            <a href="{{ renderers['json'] }}">default</a>,
-            <a href="{{ append_querystring(renderers['json'], '_shape=array') }}">array</a>,
-            <a href="{{ append_querystring(renderers['json'], '_shape=array&_nl=on') }}">newline-delimited</a>{% if primary_keys %},
-                <a href="{{ append_querystring(renderers['json'], '_shape=object') }}">object</a>
-            {% endif %}
-        </p>
+        <h3>Export Results</h3>
         <form action="{{ url_csv_path }}" method="get">
             <p>
                 CSV options:
