@@ -51,16 +51,19 @@
         <form action="{{ url_csv_path }}" method="get">
             <p>
                 CSV options:
-                <label><input type="checkbox" name="_dl"> download file</label>
+                <label><input type="checkbox" name="_dl"> download this page's results</label>
                 {% if expandable_columns %}<label><input type="checkbox" name="_labels" checked> expand labels</label>{% endif %}
-                {% if next_url and settings.allow_csv_stream %}<label><input type="checkbox" name="_stream"> stream all rows</label>{% endif %}
+                {% if next_url and settings.allow_csv_stream %}<label><input type="checkbox" name="_stream"> download all data</label>{% endif %}
                 <input type="submit" value="Export CSV">
                 {% for key, value in url_csv_hidden_args %}
                     <input type="hidden" name="{{ key }}" value="{{ value }}">
                 {% endfor %}
+                    <input type="hidden" name="exclude__exact" value="FALSE">
             </p>
         </form>
     </div>
 {% endif %}
+
+
 
 {% endblock %}
