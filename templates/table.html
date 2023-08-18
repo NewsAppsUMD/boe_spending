@@ -25,9 +25,6 @@
 <form class="filters" action="{{ urls.table(database, table) }}" method="get">
       <div class="search-row">
         <input id="_search" type="search" name="_search" value="{{ search }}">
-        <input type="hidden" name="_nocol" value="exclude">
-        <input type="hidden" name="_nocol" value="slug">
-        <input type="hidden" name="_nocol" value="purpose_of_payment_baltimore_county_only">
         <input type="hidden" name="exclude__exact" value="FALSE">
         <input type="submit" value="Search">
       </div>
