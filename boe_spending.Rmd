@@ -1,161 +1,411 @@
-```{r}
+---
+title: "Maryland Board of Education Spending Data Processing Pipeline"
+author: "CNS Maryland - Philip Merrill College of Journalism"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: united
+---
+
+# Overview
+
+This R Markdown document processes Maryland Board of Education (BOE) spending disclosure data from multiple sources into a clean, standardized dataset suitable for publication via Datasette.
+
+## Purpose
+
+Transform raw spending disclosure data from 24 Maryland counties and Baltimore City into a unified, deduplicated database of vendor payments >= $25,000.
+
+## Data Sources
+
+- **Primary**: Maryland Open Data Portal - County Board of Education Spending Disclosures
+  - URL: https://opendata.maryland.gov/Education/County-Board-of-Education-Spending-Disclosures/t6vk-rvwe
+  - Dataset ID: t6vk-rvwe
+  - Coverage: Most counties, FY 2019-2022+
+
+- **Supplemental County Data** (as needed):
+  - Baltimore County: Individual transaction records (FY 2021-2022)
+  - Baltimore City: Vendor summaries (FY 2021)
+  - Anne Arundel County: Replacement data (FY 2020+)
+  - Montgomery County: Replacement data (FY 2019)
+
+## Workflow
+
+1. Load primary state dataset
+2. Add supplemental county-specific data
+3. Replace incorrect/incomplete county datasets
+4. Standardize agency names and clean vendor names
+5. Export for entity deduplication (OpenRefine - external step)
+6. Import deduplicated results and create final output
+
+---
+
+# Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  cache = FALSE
+)
+```
+
+## Load Required Libraries
+
+```{r libraries}
+# Core data manipulation
 library(tidyverse)
+
+# Data cleaning utilities
 library(janitor)
-#library(slugify)
+
+# Check for required directories
+if (!dir.exists("data/raw")) {
+  stop("data/raw/ directory not found. Please create it and add source data files.")
+}
+if (!dir.exists("data/processed")) {
+  dir.create("data/processed", recursive = TRUE)
+  message("Created data/processed/ directory")
+}
 ```
 
-```{r}
-boe_spending <- read_csv("data/raw/County_Board_of_Education_-_Spending_Disclosures.csv") %>% clean_names()
+---
+
+# 1. Load Primary Dataset
+
+Load the main spending disclosure file from Maryland Open Data Portal.
+
+```{r load-primary}
+# Primary state dataset
+primary_file <- "data/raw/County_Board_of_Education_-_Spending_Disclosures.csv"
+
+if (!file.exists(primary_file)) {
+  stop(paste("Primary data file not found:", primary_file,
+             "\nDownload from: https://opendata.maryland.gov/Education/County-Board-of-Education-Spending-Disclosures/t6vk-rvwe"))
+}
+
+boe_spending <- read_csv(primary_file, show_col_types = FALSE) %>%
+  clean_names()
+
+message(paste("Loaded", nrow(boe_spending), "records from primary dataset"))
 ```
 
-### Baltimore County 2021 & 2022
+---
 
-need to load, group by and summarize as these appear to be individual payments?
+# 2. Add Supplemental County Data
 
-```{r}
-baltimore_county_2021 <- read_csv("data/raw/baltimore_county_2021.csv") %>% clean_names()
+Some counties provide additional detail or have data missing from the state dataset.
 
-baltimore_county_2021_totals <- baltimore_county_2021 %>%
-  group_by(fiscal_year, agency_name, payee_name, payee_zip, purpose_of_payment_baltimore_county) %>%
-  summarize(total = sum(amount)) %>%
-  filter(total >= 25000) %>%
-  rename(purpose_of_payment_baltimore_county_only = purpose_of_payment_baltimore_county, amount = total)
+## 2.1 Baltimore County (FY 2021-2022)
 
-baltimore_county_2022 <- read_csv("data/raw/baltimore_county_2022.csv") %>% clean_names()
+Baltimore County provides individual transaction records that must be aggregated.
+We filter for payments >= $25,000 per vendor per fiscal year to match state requirements.
 
-baltimore_county_2022_totals <- baltimore_county_2022 %>%
-  group_by(fiscal_year, agency_name, payee_name, payee_zip, purpose_of_payment_baltimore_county_only) %>%
-  summarize(total = sum(amount)) %>%
-  filter(total >= 25000) %>%
-  rename(amount = total)
+```{r baltimore-county}
+# Baltimore County FY 2021
+bc_2021_file <- "data/raw/baltimore_county_2021.csv"
 
-boe_spending <- bind_rows(boe_spending, baltimore_county_2021_totals, baltimore_county_2022_totals)
+if (file.exists(bc_2021_file)) {
+  baltimore_county_2021 <- read_csv(bc_2021_file, show_col_types = FALSE) %>%
+    clean_names()
 
-```
-### Baltimore City 2021 Add
+  # Aggregate individual payments by vendor
+  baltimore_county_2021_totals <- baltimore_county_2021 %>%
+    group_by(
+      fiscal_year,
+      agency_name,
+      payee_name,
+      payee_zip,
+      purpose_of_payment_baltimore_county
+    ) %>%
+    summarize(total = sum(amount), .groups = "drop") %>%
+    filter(total >= 25000) %>%
+    rename(
+      purpose_of_payment_baltimore_county_only = purpose_of_payment_baltimore_county,
+      amount = total
+    )
 
-```{r}
-baltimore_city_2021 <- read_csv("data/raw/baltimore_city_2021.csv") %>% clean_names() %>% group_by(vendor) %>% summarize(amount = sum(amount)) %>%
-  mutate(fiscal_year = 2021, agency_name = 'Baltimore City Public Schools') %>%
-  rename(payee_name = vendor)
+  boe_spending <- bind_rows(boe_spending, baltimore_county_2021_totals)
+  message(paste("Added", nrow(baltimore_county_2021_totals), "Baltimore County FY 2021 records"))
+} else {
+  message("Baltimore County FY 2021 file not found - skipping")
+}
 
-boe_spending <- bind_rows(boe_spending, baltimore_city_2021)
+# Baltimore County FY 2022
+bc_2022_file <- "data/raw/baltimore_county_2022.csv"
 
-```
+if (file.exists(bc_2022_file)) {
+  baltimore_county_2022 <- read_csv(bc_2022_file, show_col_types = FALSE) %>%
+    clean_names()
 
+  # Aggregate individual payments by vendor
+  baltimore_county_2022_totals <- baltimore_county_2022 %>%
+    group_by(
+      fiscal_year,
+      agency_name,
+      payee_name,
+      payee_zip,
+      purpose_of_payment_baltimore_county_only
+    ) %>%
+    summarize(total = sum(amount), .groups = "drop") %>%
+    filter(total >= 25000) %>%
+    rename(amount = total)
 
-### Baltimore City FY 2021
-
-```{r}
-baltimore_city_2021 <- read_csv("data/raw/baltimore_city_2021.csv") %>% clean_names() %>%
-  mutate(fiscal_year = 2021, agency_name = 'BALTIMORE CITY PUBLIC SCHOOLS')
-
-boe_spending <- bind_rows(boe_spending, baltimore_city_2021)
-```
-
-
-
-### Anne Arundel Replacement
-
-```{r}
-anne_arundel_original <- boe_spending %>% filter(agency_name == 'Anne Arundel Co. Public Schools', fiscal_year > 2019)
-
-anne_arundel_replacement <- read_csv("data/raw/anne_arundel_replacement.csv") %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name))
-
-anne_arundel_replacement <- anne_arundel_replacement %>% left_join(anne_arundel_original, by=c('payee_name', 'fiscal_year')) %>% select(-agency_name.y, -amount.y) %>% rename(agency_name = agency_name.x, amount = amount.x)
-
-boe_spending <- boe_spending %>% anti_join(anne_arundel_original)
-
-boe_spending <- bind_rows(boe_spending, anne_arundel_replacement) %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name), payee_zip5 = str_sub(payee_zip, 1, 5))
-
-```
-
-### Montgomery 2019 Replacement
-
-```{r}
-montgomery_original <- boe_spending %>% filter(agency_name == 'MONTGOMERY COUNTY PUBLIC SCHOOL', fiscal_year == 2019)
-
-montgomery_replacement <- read_csv("data/raw/montgomery_2019.csv") %>% clean_names() %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name))
-
-#montgomery_replacement <- montgomery_replacement %>% left_join(montgomery_original, by=c('payee_name', 'fiscal_year')) %>% select(-agency_name.y, -amount.y) %>% rename(agency_name = agency_name.x, amount = amount.x, payee_zip = payee_zip.x, payee_name_clean = payee_name_clean.x)
-
-boe_spending <- boe_spending %>% anti_join(montgomery_original)
-
-boe_spending <- bind_rows(boe_spending, montgomery_replacement) %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name), payee_zip5 = str_sub(payee_zip, 1, 5))
+  boe_spending <- bind_rows(boe_spending, baltimore_county_2022_totals)
+  message(paste("Added", nrow(baltimore_county_2022_totals), "Baltimore County FY 2022 records"))
+} else {
+  message("Baltimore County FY 2022 file not found - skipping")
+}
 ```
 
+## 2.2 Baltimore City (FY 2021)
 
-### General cleaning
+Baltimore City data is sometimes missing from the state dataset and must be added separately.
 
-```{r}
+```{r baltimore-city}
+bcity_file <- "data/raw/baltimore_city_2021.csv"
+
+if (file.exists(bcity_file)) {
+  baltimore_city_2021 <- read_csv(bcity_file, show_col_types = FALSE) %>%
+    clean_names() %>%
+    # Data comes pre-aggregated by vendor
+    group_by(vendor) %>%
+    summarize(amount = sum(amount), .groups = "drop") %>%
+    mutate(
+      fiscal_year = 2021,
+      agency_name = 'BALTIMORE CITY PUBLIC SCHOOLS'
+    ) %>%
+    rename(payee_name = vendor)
+
+  boe_spending <- bind_rows(boe_spending, baltimore_city_2021)
+  message(paste("Added", nrow(baltimore_city_2021), "Baltimore City FY 2021 records"))
+} else {
+  message("Baltimore City FY 2021 file not found - skipping")
+}
+```
+
+---
+
+# 3. Replace Incorrect/Incomplete County Datasets
+
+Some counties have errors or missing data in the state dataset that require replacement.
+
+## 3.1 Anne Arundel County (FY 2020+)
+
+Replace Anne Arundel data for fiscal years after 2019 with corrected data.
+
+```{r anne-arundel-replacement}
+aa_file <- "data/raw/anne_arundel_replacement.csv"
+
+if (file.exists(aa_file)) {
+  # Extract original Anne Arundel records to be replaced
+  anne_arundel_original <- boe_spending %>%
+    filter(
+      agency_name == 'Anne Arundel Co. Public Schools',
+      fiscal_year > 2019
+    )
+
+  message(paste("Removing", nrow(anne_arundel_original), "original Anne Arundel records (FY 2020+)"))
+
+  # Load replacement data
+  anne_arundel_replacement <- read_csv(aa_file, show_col_types = FALSE) %>%
+    clean_names() %>%
+    mutate(
+      agency_name = str_to_upper(agency_name),
+      payee_name_clean = str_to_upper(payee_name)
+    )
+
+  # Remove original records
+  boe_spending <- boe_spending %>%
+    anti_join(anne_arundel_original, by = c("agency_name", "fiscal_year", "payee_name", "amount"))
+
+  # Add replacement records
+  boe_spending <- bind_rows(boe_spending, anne_arundel_replacement)
+
+  message(paste("Added", nrow(anne_arundel_replacement), "replacement Anne Arundel records"))
+} else {
+  message("Anne Arundel replacement file not found - skipping")
+}
+```
+
+## 3.2 Montgomery County (FY 2019)
+
+Replace Montgomery County FY 2019 data with corrected version.
+
+```{r montgomery-replacement}
+mc_file <- "data/raw/montgomery_2019.csv"
+
+if (file.exists(mc_file)) {
+  # Extract original Montgomery 2019 records
+  montgomery_original <- boe_spending %>%
+    filter(
+      agency_name == 'MONTGOMERY COUNTY PUBLIC SCHOOL',
+      fiscal_year == 2019
+    )
+
+  message(paste("Removing", nrow(montgomery_original), "original Montgomery County FY 2019 records"))
+
+  # Load replacement data
+  montgomery_replacement <- read_csv(mc_file, show_col_types = FALSE) %>%
+    clean_names() %>%
+    mutate(
+      agency_name = str_to_upper(agency_name),
+      payee_name_clean = str_to_upper(payee_name)
+    )
+
+  # Remove original records
+  boe_spending <- boe_spending %>%
+    anti_join(montgomery_original, by = c("agency_name", "fiscal_year", "payee_name"))
+
+  # Add replacement records
+  boe_spending <- bind_rows(boe_spending, montgomery_replacement)
+
+  message(paste("Added", nrow(montgomery_replacement), "replacement Montgomery County records"))
+} else {
+  message("Montgomery County 2019 replacement file not found - skipping")
+}
+```
+
+---
+
+# 4. Data Cleaning and Standardization
+
+## 4.1 Create Clean Vendor Names and ZIP Codes
+
+```{r initial-cleaning}
+# Create standardized fields if they don't exist
+if (!"payee_name_clean" %in% names(boe_spending)) {
+  boe_spending <- boe_spending %>%
+    mutate(payee_name_clean = str_to_upper(payee_name))
+}
+
+# Create 5-digit ZIP codes
 boe_spending <- boe_spending %>%
-  mutate(payee_name_clean = str_squish(payee_name_clean)) %>%
-  mutate(payee_name_clean = str_replace(payee_name_clean, ",", "")) %>%
-  mutate(payee_name_clean = str_replace(payee_name_clean, "[.]", "")) %>%
-  mutate(payee_name_clean = str_replace(payee_name_clean, "INC.", "INC")) %>%
-  mutate(payee_name_clean = str_replace(payee_name_clean, "(EFT)", "")) %>%
-  mutate(payee_name_clean = str_replace(payee_name_clean, "(EFT ONLY)", "")) %>%
-  mutate(agency_name = str_replace(agency_name, "ST.", "ST")) %>%
-  mutate(agency_name = str_squish(agency_name))
+  mutate(payee_zip5 = str_sub(payee_zip, 1, 5))
+```
 
+## 4.2 Standardize Agency Names
+
+Fix typos, abbreviations, and inconsistencies in school district names.
+
+```{r standardize-agencies}
 boe_spending <- boe_spending %>%
+  # First pass: clean punctuation and spacing
+  mutate(
+    agency_name = str_replace(agency_name, "St\\.", "ST"),
+    agency_name = str_squish(agency_name)
+  ) %>%
+  # Second pass: standardize agency names
   mutate(agency_name = case_when(
+    # Anne Arundel variations
     agency_name == 'ANNE ARUNDEL CO. PUBLIC SCHOOLS' ~ 'ANNE ARUNDEL COUNTY PUBLIC SCHOOLS',
+
+    # Baltimore City variations
     agency_name == 'BALTIMORE CITY SCHOOLS' ~ 'BALTIMORE CITY PUBLIC SCHOOLS',
     agency_name == 'BALITMORE CITY PUBLIC SCHOOLS' ~ 'BALTIMORE CITY PUBLIC SCHOOLS',
+
+    # Caroline County variations
     agency_name == 'CAROLINE COUNTY BOARD OF EDUCATION' ~ 'CAROLINE COUNTY PUBLIC SCHOOLS',
+
+    # Dorchester County variations
     agency_name == 'DORCHESTR COUNTY BOARD OF EDUCATION' ~ 'DORCHESTER COUNTY PUBLIC SCHOOLS',
     agency_name == 'DORCHESTR COUNTY PUBLIC SCHOOLS' ~ 'DORCHESTER COUNTY PUBLIC SCHOOLS',
-    agency_name == 'MONTGOMERY COUNTY PUBLIC SCHOOL' ~ 'MONTGOMERY COUNTY PUBLIC SCHOOLS',
-    agency_name == "PRINCE GEORGES' COUNTY PUBLIC SCHOOLS" ~ "PRINCE GEORGE'S COUNTY PUBLIC SCHOOLS",
-    agency_name == 'WORCESTR COUNTY BOARD OF ED' ~ 'WORCESTER COUNTY PUBLIC SCHOOLS',
+
+    # Garrett County variations
     agency_name == 'OAKLAND, GARRETT COUNTY PUBLIC SCHOOLS' ~ 'GARRETT COUNTY PUBLIC SCHOOLS',
+
+    # Montgomery County variations
+    agency_name == 'MONTGOMERY COUNTY PUBLIC SCHOOL' ~ 'MONTGOMERY COUNTY PUBLIC SCHOOLS',
+
+    # Prince George's County variations
+    agency_name == "PRINCE GEORGES' COUNTY PUBLIC SCHOOLS" ~ "PRINCE GEORGE'S COUNTY PUBLIC SCHOOLS",
+
+    # Worcester County variations
+    agency_name == 'WORCESTR COUNTY BOARD OF ED' ~ 'WORCESTER COUNTY PUBLIC SCHOOLS',
+
+    # Default: keep as is
     TRUE ~ agency_name
   ))
 
-boe_spending <- boe_spending %>%
-  drop_na(agency_name)
-```
+# Remove any rows with missing agency names
+records_before <- nrow(boe_spending)
+boe_spending <- boe_spending %>% drop_na(agency_name)
+records_after <- nrow(boe_spending)
 
-
-
-### Years for Agencies
-
-```{r}
-boe_spending %>% group_by(agency_name, fiscal_year) %>% summarize(count = n()) %>% pivot_wider(names_from = fiscal_year, values_from = count)
-```
-
-
-### County-specific cleaning
-```{r}
-# Howard
-boe_spending <- boe_spending %>%
-  mutate(payee_name_clean = str_replace(payee_name_clean, '(EFT)','')) %>% mutate(payee_name_clean = str_replace(payee_name_clean, ' (EFTPS ONLY)',''))
-
-```
-
-
-### OpenRefine results
-
-```{r}
-
-boe_final <- read_csv("data/processed/boe_final.csv") %>% filter(fiscal_year > 2018)
-
-boe_final <- boe_final %>%
-  mutate(payee_name = str_replace_all(payee_name, "\u00A0", " "))
-
-# Load exclusion list if it exists
-if (file.exists("data/reference/exclude.csv")) {
-  exclude <- read_csv("data/reference/exclude.csv") %>% distinct()
-  boe_final <- boe_final %>% left_join(exclude)
-  boe_final <- boe_final %>%
-    mutate(exclude = if_else(is.na(exclude), FALSE, TRUE))
-} else {
-  boe_final <- boe_final %>% mutate(exclude = FALSE)
+if (records_before > records_after) {
+  message(paste("Removed", records_before - records_after, "records with missing agency names"))
 }
+```
 
-write_csv(boe_final, "data/processed/boe_spending_cleaned.csv")
+## 4.3 Clean Vendor Names
 
+Remove common suffixes, punctuation, and formatting inconsistencies.
+
+```{r clean-vendors}
+boe_spending <- boe_spending %>%
+  mutate(
+    # Remove common suffixes and formatting
+    payee_name_clean = str_replace(payee_name_clean, ",", ""),
+    payee_name_clean = str_replace(payee_name_clean, "\\.", ""),
+    payee_name_clean = str_replace(payee_name_clean, "INC\\.", "INC"),
+    payee_name_clean = str_replace(payee_name_clean, "\\(EFT\\)", ""),
+    payee_name_clean = str_replace(payee_name_clean, "\\(EFT ONLY\\)", ""),
+    payee_name_clean = str_replace(payee_name_clean, "\\(EFTPS ONLY\\)", ""),
+
+    # Final cleanup: remove extra whitespace
+    payee_name_clean = str_squish(payee_name_clean)
+  )
+```
+
+---
+
+# 5. Data Quality Checks
+
+## 5.1 Coverage by Agency and Fiscal Year
+
+Check which school districts have data for which years.
+
+```{r coverage-check}
+coverage <- boe_spending %>%
+  group_by(agency_name, fiscal_year) %>%
+  summarize(record_count = n(), .groups = "drop") %>%
+  pivot_wider(
+    names_from = fiscal_year,
+    values_from = record_count,
+    values_fill = 0
+  ) %>%
+  arrange(agency_name)
+
+print(coverage)
+
+# Summary statistics
+message("\n=== Data Coverage Summary ===")
+message(paste("Total records:", nrow(boe_spending)))
+message(paste("School districts:", n_distinct(boe_spending$agency_name)))
+message(paste("Fiscal years:", paste(sort(unique(boe_spending$fiscal_year)), collapse = ", ")))
+message(paste("Unique vendors:", n_distinct(boe_spending$payee_name_clean)))
+```
+
+## 5.2 Amount Distribution
+
+```{r amount-checks}
+message("\n=== Payment Amount Summary ===")
+message(paste("Total spending: $", format(sum(boe_spending$amount, na.rm = TRUE), big.mark = ",", scientific = FALSE)))
+message(paste("Mean payment: $", format(mean(boe_spending$amount, na.rm = TRUE), big.mark = ",", scientific = FALSE)))
+message(paste("Median payment: $", format(median(boe_spending$amount, na.rm = TRUE), big.mark = ",", scientific = FALSE)))
+message(paste("Records < $25,000:", sum(boe_spending$amount < 25000, na.rm = TRUE)))
+message(paste("Records with NA amounts:", sum(is.na(boe_spending$amount))))
+```
+
+---
+
+# 6. Create URL Slugs
+
+Create URL-safe slugs for each school district for use in web applications.
+
+```{r create-slugs}
 boe_spending <- boe_spending %>%
   mutate(slug = case_when(
     agency_name == 'ALLEGANY COUNTY PUBLIC SCHOOLS' ~ 'allegany-county',
@@ -163,47 +413,224 @@ boe_spending <- boe_spending %>%
     agency_name == 'BALTIMORE CITY PUBLIC SCHOOLS' ~ 'baltimore-city',
     agency_name == 'BALTIMORE COUNTY PUBLIC SCHOOLS' ~ 'baltimore-county',
     agency_name == 'CALVERT COUNTY PUBLIC SCHOOLS' ~ 'calvert-county',
-    agency_name == 'CARROLL COUNTY PUBLIC SCHOOLS' ~ 'carroll-county',
     agency_name == 'CAROLINE COUNTY PUBLIC SCHOOLS' ~ 'caroline-county',
+    agency_name == 'CARROLL COUNTY PUBLIC SCHOOLS' ~ 'carroll-county',
     agency_name == 'CECIL COUNTY PUBLIC SCHOOLS' ~ 'cecil-county',
     agency_name == 'CHARLES COUNTY PUBLIC SCHOOLS' ~ 'charles-county',
     agency_name == 'DORCHESTER COUNTY PUBLIC SCHOOLS' ~ 'dorchester-county',
     agency_name == 'FREDERICK COUNTY PUBLIC SCHOOLS' ~ 'frederick-county',
-    agency_name == 'HARFORD COUNTY PUBLIC SCHOOLS' ~ 'harford-county',
     agency_name == 'GARRETT COUNTY PUBLIC SCHOOLS' ~ 'garrett-county',
+    agency_name == 'HARFORD COUNTY PUBLIC SCHOOLS' ~ 'harford-county',
     agency_name == 'HOWARD COUNTY PUBLIC SCHOOLS' ~ 'howard-county',
     agency_name == 'KENT COUNTY PUBLIC SCHOOLS' ~ 'kent-county',
     agency_name == 'MONTGOMERY COUNTY PUBLIC SCHOOLS' ~ 'montgomery-county',
     agency_name == "PRINCE GEORGE'S COUNTY PUBLIC SCHOOLS" ~ 'prince-georges-county',
-    agency_name == "ST MARY'S COUNTY PUBLIC SCHOOLS" ~ 'st-marys-county',
-    agency_name == 'WORCESTER COUNTY PUBLIC SCHOOLS' ~ 'worcester-county',
     agency_name == "QUEEN ANNE'S COUNTY PUBLIC SCHOOLS" ~ 'queen-annes-county',
+    agency_name == "ST MARY'S COUNTY PUBLIC SCHOOLS" ~ 'st-marys-county',
     agency_name == 'SOMERSET COUNTY PUBLIC SCHOOLS' ~ 'somerset-county',
     agency_name == 'TALBOT COUNTY PUBLIC SCHOOLS' ~ 'talbot-county',
     agency_name == 'WASHINGTON COUNTY PUBLIC SCHOOLS' ~ 'washington-county',
-    agency_name == 'WICOMICO COUNTY PUBLIC SCHOOLS' ~ 'wicomico-county'
+    agency_name == 'WICOMICO COUNTY PUBLIC SCHOOLS' ~ 'wicomico-county',
+    agency_name == 'WORCESTER COUNTY PUBLIC SCHOOLS' ~ 'worcester-county',
+    TRUE ~ NA_character_
   ))
 
-boe_final <- boe_final %>%
-  mutate(payee_name_refined = str_replace_all(payee_name_refined, "\u00A0", " "))
+# Check for any districts without slugs
+missing_slugs <- boe_spending %>%
+  filter(is.na(slug)) %>%
+  distinct(agency_name)
 
-boe_payees_final <- boe_final %>%
-  distinct(payee_name_clean, payee_name_refined)
+if (nrow(missing_slugs) > 0) {
+  warning("Some agencies are missing URL slugs:")
+  print(missing_slugs)
+}
+```
 
-boe_spending_cleaned <- boe_spending %>%
-  left_join(boe_payees_final)
+---
 
+# 7. Export for Entity Deduplication (OpenRefine)
+
+**EXTERNAL PROCESSING STEP**
+
+The data at this point contains many vendor name variations that represent the same entity.
+For example: "APPLE INC", "APPLE INCORPORATED", "APPLE COMPUTERS INC" should all be "APPLE INC".
+
+This deduplication requires manual review using OpenRefine:
+
+1. Export the current dataset
+2. Open in OpenRefine (https://openrefine.org/)
+3. Use clustering algorithms (fingerprint, ngram, metaphone3) to identify duplicates
+4. Manually review and merge entities
+5. Create a `payee_name_refined` column with standardized names
+6. Export results as `boe_final.csv`
+
+See DATA_UPDATE.md for detailed OpenRefine instructions.
+
+```{r export-for-openrefine, eval=FALSE}
+# Export current state for OpenRefine processing
+# This is only needed if you're updating the deduplication
+write_csv(boe_spending, "data/intermediate/boe_spending_for_openrefine.csv")
+message("Exported data/intermediate/boe_spending_for_openrefine.csv for OpenRefine processing")
+message("After OpenRefine deduplication, save results as data/processed/boe_final.csv")
+```
+
+---
+
+# 8. Import Deduplicated Results and Create Final Output
+
+Load the OpenRefine-processed data with deduplicated vendor names.
+
+```{r load-deduplicated}
+openrefine_file <- "data/processed/boe_final.csv"
+
+if (!file.exists(openrefine_file)) {
+  warning(paste("OpenRefine output file not found:", openrefine_file))
+  warning("Proceeding with non-deduplicated vendor names.")
+  warning("For best results, complete the OpenRefine deduplication step.")
+
+  # Use current data without deduplication
+  boe_final <- boe_spending %>%
+    mutate(payee_name_refined = payee_name_clean)
+
+} else {
+  # Load OpenRefine results
+  boe_final <- read_csv(openrefine_file, show_col_types = FALSE) %>%
+    filter(fiscal_year > 2018)
+
+  # Clean non-breaking spaces and other Unicode issues
+  boe_final <- boe_final %>%
+    mutate(
+      payee_name = str_replace_all(payee_name, "\u00A0", " "),
+      payee_name_refined = str_replace_all(payee_name_refined, "\u00A0", " ")
+    )
+
+  message(paste("Loaded", nrow(boe_final), "records from OpenRefine output"))
+}
+```
+
+## 8.1 Apply Exclusion List (Optional)
+
+Load any vendor exclusions (e.g., duplicate records, data quality issues flagged for review).
+
+```{r apply-exclusions}
+exclude_file <- "data/reference/exclude.csv"
+
+if (file.exists(exclude_file)) {
+  exclude <- read_csv(exclude_file, show_col_types = FALSE) %>% distinct()
+
+  boe_final <- boe_final %>%
+    left_join(exclude, by = c("payee_name", "fiscal_year")) %>%
+    mutate(exclude = if_else(is.na(exclude), FALSE, TRUE))
+
+  excluded_count <- sum(boe_final$exclude)
+  message(paste("Marked", excluded_count, "records for exclusion"))
+} else {
+  boe_final <- boe_final %>% mutate(exclude = FALSE)
+  message("No exclusion list found - no records excluded")
+}
+```
+
+## 8.2 Merge Deduplicated Names Back to Main Dataset
+
+```{r merge-deduplicated-names}
+# If we loaded OpenRefine results, merge the refined names back to our working dataset
+if (file.exists(openrefine_file)) {
+  # Extract payee name mapping (clean -> refined)
+  boe_payees_final <- boe_final %>%
+    distinct(payee_name_clean, payee_name_refined)
+
+  # Merge refined names into our dataset
+  boe_spending_cleaned <- boe_spending %>%
+    left_join(boe_payees_final, by = "payee_name_clean") %>%
+    # Use cleaned name if no refined version exists
+    mutate(payee_name_refined = case_when(
+      is.na(payee_name_refined) ~ payee_name_clean,
+      TRUE ~ payee_name_refined
+    ))
+} else {
+  # No OpenRefine results - use cleaned names
+  boe_spending_cleaned <- boe_spending %>%
+    mutate(payee_name_refined = payee_name_clean)
+}
+```
+
+## 8.3 Create Final Output Dataset
+
+Select and aggregate fields for the final published database.
+
+```{r create-final-output}
 boe_spending_cleaned <- boe_spending_cleaned %>%
-  mutate(payee_name_refined = case_when(
-    is.na(payee_name_refined) ~ payee_name_clean,
-    TRUE ~ payee_name_refined
-  ))
-
-boe_spending_cleaned <- boe_spending_cleaned %>% select(agency_name, fiscal_year, amount, payee_name_refined, payee_zip5, purpose_of_payment_baltimore_county_only, slug) %>%
-  rename(payee_name = payee_name_refined, payee_zip = payee_zip5) %>%
+  # Select final columns
+  select(
+    agency_name,
+    fiscal_year,
+    amount,
+    payee_name_refined,
+    payee_zip5,
+    purpose_of_payment_baltimore_county_only,
+    slug
+  ) %>%
+  # Rename for cleaner output
+  rename(
+    payee_name = payee_name_refined,
+    payee_zip = payee_zip5
+  ) %>%
+  # Aggregate by unique combinations (in case deduplication created duplicates)
   group_by(agency_name, fiscal_year, payee_name, payee_zip, slug) %>%
-  summarize(total = sum(amount)) %>%
+  summarize(
+    total = sum(amount, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
   rename(amount = total)
 
-write_csv(boe_spending_cleaned, "data/processed/boe_spending_cleaned.csv")
+# Final row count
+message(paste("\nFinal dataset contains", nrow(boe_spending_cleaned), "records"))
+```
+
+---
+
+# 9. Export Final Data
+
+Write the cleaned, deduplicated dataset ready for database import.
+
+```{r export-final}
+output_file <- "data/processed/boe_spending_cleaned.csv"
+
+write_csv(boe_spending_cleaned, output_file)
+
+message(paste("\n=== EXPORT COMPLETE ==="))
+message(paste("Output file:", output_file))
+message(paste("Total records:", nrow(boe_spending_cleaned)))
+message(paste("Total spending: $", format(sum(boe_spending_cleaned$amount, na.rm = TRUE), big.mark = ",", scientific = FALSE)))
+message(paste("\nNext step: Build SQLite database with boe_setup.sh"))
+```
+
+---
+
+# Summary
+
+This pipeline has:
+
+1. ✓ Loaded primary state dataset
+2. ✓ Added supplemental county data (Baltimore City/County)
+3. ✓ Replaced corrected county datasets (Anne Arundel, Montgomery)
+4. ✓ Standardized agency names
+5. ✓ Cleaned vendor names
+6. ✓ Created URL slugs
+7. ⚠ Applied entity deduplication (requires OpenRefine - see DATA_UPDATE.md)
+8. ✓ Created final output dataset
+
+**Output:** `data/processed/boe_spending_cleaned.csv`
+
+**Next Steps:**
+1. If not already done: Process `boe_spending_for_openrefine.csv` through OpenRefine
+2. Build SQLite database: `bash boe_setup.sh`
+3. Deploy to Datasette: See README.md for deployment instructions
+
+---
+
+## Session Information
+
+```{r session-info}
+sessionInfo()
 ```
