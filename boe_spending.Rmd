@@ -5,7 +5,7 @@ library(janitor)
 ```
 
 ```{r}
-boe_spending <- read_csv("~/code/boe_spending/County_Board_of_Education_-_Spending_Disclosures.csv") %>% clean_names()
+boe_spending <- read_csv("data/raw/County_Board_of_Education_-_Spending_Disclosures.csv") %>% clean_names()
 ```
 
 ### Baltimore County 2021 & 2022
@@ -13,7 +13,7 @@ boe_spending <- read_csv("~/code/boe_spending/County_Board_of_Education_-_Spendi
 need to load, group by and summarize as these appear to be individual payments?
 
 ```{r}
-baltimore_county_2021 <- read_csv("~/code/boe_spending/baltimore_county_2021.csv") %>% clean_names()
+baltimore_county_2021 <- read_csv("data/raw/baltimore_county_2021.csv") %>% clean_names()
 
 baltimore_county_2021_totals <- baltimore_county_2021 %>%
   group_by(fiscal_year, agency_name, payee_name, payee_zip, purpose_of_payment_baltimore_county) %>%
@@ -21,7 +21,7 @@ baltimore_county_2021_totals <- baltimore_county_2021 %>%
   filter(total >= 25000) %>%
   rename(purpose_of_payment_baltimore_county_only = purpose_of_payment_baltimore_county, amount = total)
 
-baltimore_county_2022 <- read_csv("~/code/boe_spending/baltimore_county_2022.csv") %>% clean_names()
+baltimore_county_2022 <- read_csv("data/raw/baltimore_county_2022.csv") %>% clean_names()
 
 baltimore_county_2022_totals <- baltimore_county_2022 %>%
   group_by(fiscal_year, agency_name, payee_name, payee_zip, purpose_of_payment_baltimore_county_only) %>%
@@ -35,7 +35,7 @@ boe_spending <- bind_rows(boe_spending, baltimore_county_2021_totals, baltimore_
 ### Baltimore City 2021 Add
 
 ```{r}
-baltimore_city_2021 <- read_csv("baltimore_city_2021.csv") %>% clean_names() %>% group_by(vendor) %>% summarize(amount = sum(amount)) %>%
+baltimore_city_2021 <- read_csv("data/raw/baltimore_city_2021.csv") %>% clean_names() %>% group_by(vendor) %>% summarize(amount = sum(amount)) %>%
   mutate(fiscal_year = 2021, agency_name = 'Baltimore City Public Schools') %>%
   rename(payee_name = vendor)
 
@@ -47,7 +47,7 @@ boe_spending <- bind_rows(boe_spending, baltimore_city_2021)
 ### Baltimore City FY 2021
 
 ```{r}
-baltimore_city_2021 <- read_csv("~/code/boe_spending/baltimore_city_2021.csv") %>% clean_names() %>%
+baltimore_city_2021 <- read_csv("data/raw/baltimore_city_2021.csv") %>% clean_names() %>%
   mutate(fiscal_year = 2021, agency_name = 'BALTIMORE CITY PUBLIC SCHOOLS')
 
 boe_spending <- bind_rows(boe_spending, baltimore_city_2021)
@@ -60,7 +60,7 @@ boe_spending <- bind_rows(boe_spending, baltimore_city_2021)
 ```{r}
 anne_arundel_original <- boe_spending %>% filter(agency_name == 'Anne Arundel Co. Public Schools', fiscal_year > 2019)
 
-anne_arundel_replacement <- read_csv("anne_arundel_replacement.csv") %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name))
+anne_arundel_replacement <- read_csv("data/raw/anne_arundel_replacement.csv") %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name))
 
 anne_arundel_replacement <- anne_arundel_replacement %>% left_join(anne_arundel_original, by=c('payee_name', 'fiscal_year')) %>% select(-agency_name.y, -amount.y) %>% rename(agency_name = agency_name.x, amount = amount.x)
 
@@ -75,7 +75,7 @@ boe_spending <- bind_rows(boe_spending, anne_arundel_replacement) %>% mutate(age
 ```{r}
 montgomery_original <- boe_spending %>% filter(agency_name == 'MONTGOMERY COUNTY PUBLIC SCHOOL', fiscal_year == 2019)
 
-montgomery_replacement <- read_csv("montgomery_2019.csv") %>% clean_names() %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name))
+montgomery_replacement <- read_csv("data/raw/montgomery_2019.csv") %>% clean_names() %>% mutate(agency_name = str_to_upper(agency_name), payee_name_clean = str_to_upper(payee_name))
 
 #montgomery_replacement <- montgomery_replacement %>% left_join(montgomery_original, by=c('payee_name', 'fiscal_year')) %>% select(-agency_name.y, -amount.y) %>% rename(agency_name = agency_name.x, amount = amount.x, payee_zip = payee_zip.x, payee_name_clean = payee_name_clean.x)
 
@@ -139,19 +139,22 @@ boe_spending <- boe_spending %>%
 
 ```{r}
 
-boe_final <- read_csv("boe_final.csv") %>% filter(fiscal_year > 2018)
+boe_final <- read_csv("data/processed/boe_final.csv") %>% filter(fiscal_year > 2018)
 
-boe_final <- boe_final %>% 
+boe_final <- boe_final %>%
   mutate(payee_name = str_replace_all(payee_name, "\u00A0", " "))
 
-exclude <- read_csv("exclude.csv") %>% distinct()
+# Load exclusion list if it exists
+if (file.exists("data/reference/exclude.csv")) {
+  exclude <- read_csv("data/reference/exclude.csv") %>% distinct()
+  boe_final <- boe_final %>% left_join(exclude)
+  boe_final <- boe_final %>%
+    mutate(exclude = if_else(is.na(exclude), FALSE, TRUE))
+} else {
+  boe_final <- boe_final %>% mutate(exclude = FALSE)
+}
 
-boe_final <- boe_final %>% left_join(exclude)
-
-boe_final <- boe_final %>% 
-  mutate(exclude = if_else(is.na(exclude), FALSE, TRUE))
-
-write_csv(boe_final, "boe_spending_cleaned.csv")
+write_csv(boe_final, "data/processed/boe_spending_cleaned.csv")
 
 boe_spending <- boe_spending %>%
   mutate(slug = case_when(
@@ -202,5 +205,5 @@ boe_spending_cleaned <- boe_spending_cleaned %>% select(agency_name, fiscal_year
   summarize(total = sum(amount)) %>%
   rename(amount = total)
 
-write_csv(boe_spending_cleaned, "boe_spending_cleaned.csv")
+write_csv(boe_spending_cleaned, "data/processed/boe_spending_cleaned.csv")
 ```
